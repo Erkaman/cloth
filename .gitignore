@@ -1,0 +1,15 @@
+**.bak
+**.mtl
+**.orig
+**/*.dll
+**/*.exe
+*.pyc
+.DS_Store
+/CMakeLists.txt
+OpenGL-tutorial_v*
+Thumbs.db
+bin-*/*
+build/*
+distrib/build_*/*
+makefile
+screenshot.bmp
