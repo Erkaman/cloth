@@ -14,6 +14,8 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include <glm/gtx/string_cast.hpp>
+
 
 /*
   TINY OBJ
@@ -69,12 +71,15 @@ private:
     std::vector<glm::vec3> m_positions;
     std::vector<glm::vec3> m_oldPositions;
 
+    std::vector<glm::vec3> m_normals;
+
     std::vector<GLuint> m_faces;
 
     std::vector<Constraint> m_constraints;
 
     GLuint m_indexVbo;
     GLuint m_vertexVbo;
+    GLuint m_normalVbo;
 
     const int N = 10; // degree of tesselation. means  quads.
 
@@ -176,24 +181,16 @@ public:
 
         printf("cons: %d\n", m_constraints.size());
        // Constraint c = m_constraints[0];
-        /*
-        vec3& v0 = m_vertices[c.i0];
-        vec3& v1 = m_vertices[c.i1];
+  
+        for (const vec3& p : m_positions) {
+            m_normals.emplace_back(0.0f, 0.0f, 0.0f); // for every vertex, create a corresponding normal. 
+        }
 
-        vec3 m = (v0 + v1) * 0.5f;
-        m = v0;
-
-        v0 = m;
-       v1 = m;
-       */
 
     }
 
     void Update(float delta) {
-        //static float total = 0.0;
-        //total += delta;
-        //m_vertices[0].y = sin(total);
-
+        
         
         for (size_t i = 0; i < m_positions.size(); ++i) {
             vec3 vel = m_positions[i] - m_oldPositions[i];
@@ -221,7 +218,6 @@ public:
                     exit(1);
                 }
                 
-
                 vec3& v0 = m_positions[i0];
                 vec3& v1 = m_positions[i1];
                 
@@ -249,16 +245,71 @@ public:
        // m_positions[0] = m_oldPositions[0];
 
         // constraints. 
+
+        for (vec3& n : m_normals) {
+            n = vec3(0.0, 0.0, 0.0);
+        }
+        
+        for (size_t i = 0; i < m_faces.size(); i += 3) {
+
+            size_t i0 = i + 0;
+            size_t i1 = i + 1;
+            size_t i2 = i + 2;
+
+
+            vec3 p0 = m_positions[m_faces[i0]];
+            vec3 p1 = m_positions[m_faces[i1]];
+            vec3 p2 = m_positions[m_faces[i2]];
+
+            vec3 v0 = glm::normalize(p0 - p1);
+            vec3 v1 = glm::normalize(p0 - p2);
+
+
+
+            vec3 n0 = glm::normalize(glm::cross(v0, v1));
+            /*
+            printf("n0: %s\n", glm::to_string(n0).c_str() );
+            printf("v0: %s\n", glm::to_string(v0).c_str());
+            printf("v1: %s\n", glm::to_string(v1).c_str());
+
+            printf("p0: %s\n", glm::to_string(p0).c_str());
+            printf("p1: %s\n", glm::to_string(p1).c_str());
+            printf("p2: %s\n", glm::to_string(p2).c_str());
+            */
+
+            m_normals[m_faces[i0]] += n0;
+            m_normals[m_faces[i1]] += n0;
+            m_normals[m_faces[i2]] += n0;
+
+
+
+        }
+
+        
+        for (vec3& n : m_normals) {
+            n = glm::normalize(n);
+        }
+        
+        
+
+
+        
         
 
 
         GL_C(glGenBuffers(1, &m_indexVbo));
         GL_C(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_indexVbo));
-        GL_C(glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(GLuint)* m_faces.size(), m_faces.data(), GL_STATIC_DRAW));
+        GL_C(glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(GLuint)* m_faces.size(), m_faces.data(), GL_DYNAMIC_DRAW));
 
         GL_C(glGenBuffers(1, &m_vertexVbo));
         GL_C(glBindBuffer(GL_ARRAY_BUFFER, m_vertexVbo));
-        GL_C(glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3)*m_positions.size(), m_positions.data(), GL_STATIC_DRAW));
+        GL_C(glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3)*m_positions.size(), m_positions.data(), GL_DYNAMIC_DRAW));
+
+        GL_C(glGenBuffers(1, &m_normalVbo));
+        GL_C(glBindBuffer(GL_ARRAY_BUFFER, m_normalVbo));
+        GL_C(glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3)*m_normals.size(), m_normals.data(), GL_DYNAMIC_DRAW));
+
+
     }
 
 
@@ -267,6 +318,14 @@ public:
         GL_C(glEnableVertexAttribArray(0));
         GL_C(glBindBuffer(GL_ARRAY_BUFFER, m_vertexVbo));
         GL_C(glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, (void*)0));
+
+        GL_C(glEnableVertexAttribArray(1));
+        GL_C(glBindBuffer(GL_ARRAY_BUFFER, m_normalVbo));
+        GL_C(glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 0, (void*)0));
+
+
+//        GL_C(glPolygonMode(GL_FRONT_AND_BACK, GL_LINE));
+
 
         GL_C(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_indexVbo));
 
@@ -362,8 +421,7 @@ void Render() {
     GL_C(glUniformMatrix4fv(glGetUniformLocation(shader, "uMvp"), 1, GL_FALSE, glm::value_ptr(MVP)));
     GL_C(glUniformMatrix4fv(glGetUniformLocation(shader, "uView"), 1, GL_FALSE, glm::value_ptr(viewMatrix)));
     
-    GL_C(glPolygonMode(GL_FRONT_AND_BACK, GL_LINE));
-
+    
 
   //  profiler->Begin();
 
