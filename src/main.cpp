@@ -23,6 +23,8 @@
 #define TINYOBJLOADER_IMPLEMENTATION // define this in only *one* .cc
 #include "tiny_obj_loader.h"
 
+#include "lodepng.h"
+
 using std::string;
 using std::vector;
 using glm::vec3;
@@ -56,6 +58,8 @@ double prevMouseY = 0;
 double curMouseX = 0;
 double curMouseY = 0;
 
+GLuint clothTexture;
+
 struct Constraint{
 public:
     GLuint i0;
@@ -71,6 +75,7 @@ private:
     std::vector<glm::vec3> m_positions;
     std::vector<glm::vec3> m_oldPositions;
 
+    std::vector<glm::vec2> m_uvs;
     std::vector<glm::vec3> m_normals;
 
     std::vector<GLuint> m_faces;
@@ -80,6 +85,7 @@ private:
     GLuint m_indexVbo;
     GLuint m_vertexVbo;
     GLuint m_normalVbo;
+    GLuint m_uvVbo;
 
     const int N = 10; // degree of tesselation. means  quads.
 
@@ -107,14 +113,19 @@ public:
         for (int row = 0; row <= N; ++row) {
 
             float z = (row / (float)N)*(ymax - ymin) + ymin;
+            float v = row / (float)N;
 
             for (int col = 0; col <= N; ++col) {
 
                 float x = (col / (float)N)*(xmax - xmin) + xmin;
+                float u = col / (float)N;
 
                 GLuint i0 = m_positions.size();
                 m_positions.push_back(glm::vec3(x, 0.0f, z));
                 m_oldPositions.push_back(glm::vec3(x, 0.0f, z));
+
+                printf("uv: %f, %f\n ", u, v);
+                m_uvs.push_back(glm::vec2(u, v));
 
    
             }
@@ -179,12 +190,25 @@ public:
         }
 
 
-        printf("cons: %d\n", m_constraints.size());
+   //     printf("cons: %d\n", m_constraints.size());
        // Constraint c = m_constraints[0];
   
         for (const vec3& p : m_positions) {
             m_normals.emplace_back(0.0f, 0.0f, 0.0f); // for every vertex, create a corresponding normal. 
         }
+
+        GL_C(glGenBuffers(1, &m_indexVbo));
+        GL_C(glGenBuffers(1, &m_vertexVbo));
+        GL_C(glGenBuffers(1, &m_normalVbo));
+        GL_C(glGenBuffers(1, &m_uvVbo));
+
+
+        GL_C(glGenBuffers(1, &m_uvVbo));
+        GL_C(glBindBuffer(GL_ARRAY_BUFFER, m_uvVbo));
+        GL_C(glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec2)*m_uvs.size(), m_uvs.data(), GL_DYNAMIC_DRAW));
+
+
+
 
 
     }
@@ -297,17 +321,15 @@ public:
         
 
 
-        GL_C(glGenBuffers(1, &m_indexVbo));
         GL_C(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_indexVbo));
         GL_C(glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(GLuint)* m_faces.size(), m_faces.data(), GL_DYNAMIC_DRAW));
 
-        GL_C(glGenBuffers(1, &m_vertexVbo));
         GL_C(glBindBuffer(GL_ARRAY_BUFFER, m_vertexVbo));
         GL_C(glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3)*m_positions.size(), m_positions.data(), GL_DYNAMIC_DRAW));
 
-        GL_C(glGenBuffers(1, &m_normalVbo));
         GL_C(glBindBuffer(GL_ARRAY_BUFFER, m_normalVbo));
         GL_C(glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3)*m_normals.size(), m_normals.data(), GL_DYNAMIC_DRAW));
+
 
 
     }
@@ -322,6 +344,10 @@ public:
         GL_C(glEnableVertexAttribArray(1));
         GL_C(glBindBuffer(GL_ARRAY_BUFFER, m_normalVbo));
         GL_C(glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 0, (void*)0));
+
+        GL_C(glEnableVertexAttribArray(2));
+        GL_C(glBindBuffer(GL_ARRAY_BUFFER, m_uvVbo));
+        GL_C(glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 0, (void*)0));
 
 
 //        GL_C(glPolygonMode(GL_FRONT_AND_BACK, GL_LINE));
@@ -422,7 +448,16 @@ void Render() {
     GL_C(glUniformMatrix4fv(glGetUniformLocation(shader, "uView"), 1, GL_FALSE, glm::value_ptr(viewMatrix)));
     
     
+    GL_C(glBindTexture(GL_TEXTURE_2D, clothTexture));
+    GL_C(glActiveTexture(GL_TEXTURE0));
 
+    
+    GL_C(glUniform1i(glGetUniformLocation(shader, "uTexture"), 0));
+    /*
+    printf("loc0: %d\n", glGetUniformLocation(shader, "uTexture"));
+    printf("loc1: %d\n", glGetUniformLocation(shader, "uMvp"));
+    printf("loc2: %d\n", glGetUniformLocation(shader, "uView"));
+    */
   //  profiler->Begin();
 
     cloth->Render();
@@ -492,6 +527,52 @@ void HandleInput() {
     }
 }
 
+void LoadTexture() {
+
+    std::vector<unsigned char> buffer;
+    lodepng::load_file(buffer,
+        "sponza_curtain_blue_diff.png");
+
+    lodepng::State state;
+    unsigned int width;
+    unsigned int height;
+    std::vector<unsigned char> imageData;
+    unsigned error = lodepng::decode(imageData, width, height, state, buffer);
+
+    if (error != 0){
+
+        printf("Could not load cloth texture sponza_curtain_blue_diff.png: %s\n", lodepng_error_text(error));
+
+    }
+
+    printf("size: %ld\n", imageData.size());
+
+//    vector<unsigned char>& imageData = textureInfo->imageData;
+
+
+    GL_C(glGenTextures(1, &clothTexture));
+
+    // we only need one texture, so we bind here, and keep it bound for the rest of the program.
+    GL_C(glBindTexture(GL_TEXTURE_2D, clothTexture));
+    
+ //   printf("data: %d, %d, %d, %d, %d\n", width, height, imageData.data()[0], imageData.data()[1], imageData.data()[2]);
+    GL_C(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, imageData.data()));
+
+    GL_C(glActiveTexture(GL_TEXTURE0));
+
+
+    GL_C(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT));
+    GL_C(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT));
+
+    GL_C(glGenerateMipmap(GL_TEXTURE_2D));
+
+    GL_C(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR));
+    GL_C(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR));
+    
+  //
+
+}
+
 int main(int argc, char** argv)
 {
 
@@ -500,8 +581,8 @@ int main(int argc, char** argv)
     // init ImGui
     ImGui_ImplGlfwGL3_Init(window, true);
 
-    normalShader = LoadNormalShader(LoadFile("simple.vs"),
-        LoadFile("simple.fs"));
+    normalShader = LoadNormalShader(LoadFile("simple.vs"), LoadFile("simple.fs"));
+    LoadTexture();
 
     
     // our patches are simply triangles in our case.
